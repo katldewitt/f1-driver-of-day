@@ -10,6 +10,9 @@ knitr::opts_chunk$set(echo = TRUE)
 
 library(ggplot2)
 library(dplyr)
+
+rm(list = ls())
+set.seed(3636)
 ```
 
 ## Read in the data
@@ -79,8 +82,20 @@ create_driver_level_ds <- function(){
       #3. Left join the kaggle dataset Drivers using driver ref
       eda_driver_level <- driverofday_m %>% left_join(list_of_df[["drivers"]], by = c("Driver.of.The.Day" = "driverRef"))
       
-      #4. clean up and return
+      #4. clean up and format
       remove(driverofday_m)
+      
+      #drop unneeded variables 
+      eda_driver_level <- eda_driver_level[, !(names(eda_driver_level) %in% c("number", "code", "forename", "surname", "url"))]
+      
+      #Reformat variables
+      eda_driver_level$Race <- as.factor(eda_driver_level$Race)
+      eda_driver_level$driverId <- as.factor(eda_driver_level$driverId)
+      eda_driver_level$nationality <- as.factor(eda_driver_level$nationality)
+      eda_driver_level$Driver.of.The.Day <- as.factor(eda_driver_level$Driver.of.The.Day)
+      eda_driver_level$dob <- as.Date(eda_driver_level$dob, "%Y-%m-%d")
+      
+      #5. return df
       eda_driver_level
   }
   else {
@@ -91,5 +106,47 @@ create_driver_level_ds <- function(){
 
 eda_driver_level <- create_driver_level_ds()
 
+```
+
+```{r}
+eda_race_level <- eda_driver_level %>% left_join(list_of_df[["races"]], by = c("Race" = "name", "Season" = "year"))
+
+#drop unneeded variables 
+eda_race_level <- eda_race_level[, !(names(eda_driver_level) %in% c("round", "url"))]
+      
+
+#Translate date to date in R
+eda_race_level$date <- as.Date(eda_race_level$date, "%d/%m/%y")
+eda_race_level$dob <- as.Date(eda_race_level$dob, "%Y-%m-%d")
+
+#Create age at race
+eda_race_level$age_at_race <- floor((eda_race_level$date - eda_race_level$dob) / 365.25)
+
+#Join with drivers_standings on driver_id + race_id 
+driver_standings <-list_of_df[["driver_standings"]]
+driver_standings$driverId <- as.factor(driver_standings$driverId)
+eda_race_level <- eda_race_level %>% inner_join(driver_standings, by = c("raceId", "driverId"))
+
+
+#TODO: how many pitstops per race?
+#TODO: how Tire pattern/usage?
+#TODO: race result?
+```
+
+
+## Begin EDA
+
+### Driver Level Checks
+
+```{r}
+#reformat data to be factors
+summary(eda_driver_level)
+eda_driver_level$Season <- as.factor(eda_driver_level$Season)
+
+#drop unneeded variables 
+eda_driver_level <- eda_driver_level[, !(names(eda_driver_level) %in% c("number", "code", "forename", "surname", "url"))]
+
+#Ideas for variables: can we look at age at time of race?
+summary(eda_driver_level)
 ```
 
