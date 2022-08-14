@@ -37,6 +37,7 @@ dsnames <- c("circuits",
              "pit_stops",
              "qualifying",
              "races",
+             "results",
              "seasons",
              "sprint_results",
              "status" )
@@ -93,6 +94,8 @@ create_driver_level_ds <- function(){
       eda_driver_level$driverId <- as.factor(eda_driver_level$driverId)
       eda_driver_level$nationality <- as.factor(eda_driver_level$nationality)
       eda_driver_level$Driver.of.The.Day <- as.factor(eda_driver_level$Driver.of.The.Day)
+      
+      #Tranlsate DOB to date format
       eda_driver_level$dob <- as.Date(eda_driver_level$dob, "%Y-%m-%d")
       
       #5. return df
@@ -109,28 +112,59 @@ eda_driver_level <- create_driver_level_ds()
 ```
 
 ```{r}
+
+#TODO: make this into a function as well.
+
+create_race_level_ds <- function(){
+  if (! exists("eda_driver_level")) {
+    eda_driver_level <- create_driver_level_ds()
+  }
+  
+   if (! exists("eda_race_level")) {
+     #create datset
+   }
+  else{
+    eda_race_level
+  }
+
+}
+
+
+#Join to race level dataset based on race/year
 eda_race_level <- eda_driver_level %>% left_join(list_of_df[["races"]], by = c("Race" = "name", "Season" = "year"))
 
 #drop unneeded variables 
 eda_race_level <- eda_race_level[, !(names(eda_driver_level) %in% c("round", "url"))]
       
 
-#Translate date to date in R
+#Translate date to date
 eda_race_level$date <- as.Date(eda_race_level$date, "%d/%m/%y")
 eda_race_level$dob <- as.Date(eda_race_level$dob, "%Y-%m-%d")
 
-#Create age at race
-eda_race_level$age_at_race <- floor((eda_race_level$date - eda_race_level$dob) / 365.25)
+#NEW VAR: Create age at race
+eda_race_level$age_at_race <- as.numeric(floor((eda_race_level$date - eda_race_level$dob) / 365.25))
 
-#Join with drivers_standings on driver_id + race_id 
+#Join with drivers_standings on driverId + raceId 
 driver_standings <-list_of_df[["driver_standings"]]
 driver_standings$driverId <- as.factor(driver_standings$driverId)
 eda_race_level <- eda_race_level %>% inner_join(driver_standings, by = c("raceId", "driverId"))
 
 
-#TODO: how many pitstops per race?
+#Variables to create
+#Create a df of number of pitstops per race
+pit_stops <- list_of_df[["pit_stops"]]
+
+pit_stops_driver_race <- pit_stops %>% group_by(raceId, driverId) %>% summarise(numStops = n())
+
+#QA: Verify case between datasets
+nrow(pit_stops[c(pit_stops$raceId == 841 & pit_stops$driverId == 153),]) ==
+  pit_stops_driver_race$numStops[pit_stops_driver_race$raceId == 841 & pit_stops_driver_race$driverId == 153]
+
 #TODO: how Tire pattern/usage?
-#TODO: race result?
+#TODO: race result? Grid starting? status? - results
+#TODO: constructor cup winner?
+
+eda_race_level <- create_race_level_ds()
 ```
 
 
@@ -143,10 +177,8 @@ eda_race_level <- eda_race_level %>% inner_join(driver_standings, by = c("raceId
 summary(eda_driver_level)
 eda_driver_level$Season <- as.factor(eda_driver_level$Season)
 
-#drop unneeded variables 
-eda_driver_level <- eda_driver_level[, !(names(eda_driver_level) %in% c("number", "code", "forename", "surname", "url"))]
-
 #Ideas for variables: can we look at age at time of race?
 summary(eda_driver_level)
+hist(as.numeric(eda_race_level$age_at_race) )
 ```
 
