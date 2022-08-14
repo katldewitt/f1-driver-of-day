@@ -126,8 +126,10 @@ nrow(pit_stops[c(pit_stops$raceId == 841 & pit_stops$driverId == 153),]) ==
 
 
 ```{r}
-
-#TODO: make this into a function as well.
+# FUNCTION create_race_level_ds
+# Creates a race level dataset by combining Driver of the Day with race level info 
+# if it's not already in memory
+# @returns a dataframe where the PKs are driverId and raceId
 
 create_race_level_ds <- function(){
   if (! exists("eda_driver_level")) {
@@ -162,6 +164,16 @@ create_race_level_ds <- function(){
 
     #Join pit_stops_driver race on driverId + raceID to bring in Number of Stops
     eda_race_level <- eda_race_level %>% left_join(pit_stops_driver_race, by = c("raceId", "driverId"))
+    
+    #Join results race on driverId + raceID to bring in Number of Stops
+    results <- list_of_df[["results"]]
+    results$raceTime <- results$time
+    #drop time, rank (duplicate to position Order), drop points, drop positionText
+    results <- results[, !(names(results) %in% c("time", "rank", "positionText", "position", "points"))]
+    eda_race_level <- eda_race_level %>% left_join(list_of_df[["results"]], by = c("raceId", "driverId"))
+  
+    #Join status and StatusId
+    eda_race_level <- eda_race_level %>% left_join(list_of_df[["status"]], by = c("statusId"))
 
    }
   else{
@@ -174,7 +186,6 @@ create_race_level_ds <- function(){
 #Variables to create
 
 #TODO: how Tire pattern/usage?
-#TODO: race result? Grid starting? status? - results
 #TODO: constructor cup winner? - constructors -> constructor_results
 
 eda_race_level <- create_race_level_ds()
@@ -205,5 +216,8 @@ hist(eda_race_level$num_stops)
 
 #EDA: time of race?
 table(eda_race_level$afternoon_race)
+
+#EDA: Finishing the race/staus?
+table(eda_race_level$status)
 ```
 
