@@ -1,0 +1,95 @@
+---
+title: "F1 Driver of the Day EDA"
+author: "Kathryn DeWitt"
+date: "2022-08-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ggplot2)
+library(dplyr)
+```
+
+## Read in the data
+
+```{r read_in}
+# @FUNCTION: read_in
+# read in the data using a filepath, returns a dataframe
+# @param filename = filepath for pc
+read_in <- function(filename){
+  dataset = read.csv(filename)
+  dataset
+}
+
+
+# Read in the kaggle datasets
+dsnames <- c("circuits",
+             "constructor_results",
+             "constructors",
+             "driver_standings",
+             "drivers",
+             "lap_times",
+             "pit_stops",
+             "qualifying",
+             "races",
+             "seasons",
+             "sprint_results",
+             "status" )
+
+list_of_df <- list()
+
+for (dsname in dsnames) {
+  print(paste("Reading in", dsname))
+  list_of_df[[dsname]] <-  read_in(paste0('../data/Kaggle_DS/', dsname, '.csv'))
+  print(summary(list_of_df[[dsname]]))
+}
+
+# Read in outcome variables for driver of the day, which is an exception in 
+#location and naming
+dsname <- "driver_of_day"
+print(paste("Reading in", dsname))
+list_of_df[[dsname]] <-  read_in(paste0('../data/DriverOfDay.csv'))
+summary(list_of_df[[dsname]])
+```
+
+
+## Code to combine datasets
+
+### Driver Level Join
+
+```{r create_driver_level_ds}
+# FUNCTION create_driver_level_ds
+# Creates a driver level dataset by combining Driver of the Day with Driver Data 
+# if it's not already in memory
+# @returns a dataframe where the PK is driverRef (usually driver's last name, all lower)
+
+create_driver_level_ds <- function(){
+  if (! exists("eda_driver_level")) {
+      #1. create a modified version of Driver of the day with some driver reference updates
+      driverofday_m <- list_of_df[["driver_of_day"]]
+      driverofday_m$Driver.of.The.Day[driverofday_m$Driver.of.The.Day=="Verstappen"] <- c("max_verstappen")
+      driverofday_m$Driver.of.The.Day[driverofday_m$Driver.of.The.Day=="Kyvat"] <- c("kvyat") #spelling error that needs to be fixed
+      driverofday_m$Driver.of.The.Day[driverofday_m$Driver.of.The.Day=="Magnussen"] <- c("kevin_magnussen")
+      
+      #2. Lower case everything for joins
+      driverofday_m$Driver.of.The.Day <- tolower(driverofday_m$Driver.of.The.Day)
+      
+      #3. Left join the kaggle dataset Drivers using driver ref
+      eda_driver_level <- driverofday_m %>% left_join(list_of_df[["drivers"]], by = c("Driver.of.The.Day" = "driverRef"))
+      
+      #4. clean up and return
+      remove(driverofday_m)
+      eda_driver_level
+  }
+  else {
+    eda_driver_level
+  }
+  
+}
+
+eda_driver_level <- create_driver_level_ds()
+
+```
+
