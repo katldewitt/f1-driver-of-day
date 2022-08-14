@@ -120,7 +120,7 @@ pit_stops_driver_race <- pit_stops %>% group_by(raceId, driverId) %>% summarise(
 
 #QA: Verify case between datasets
 nrow(pit_stops[c(pit_stops$raceId == 841 & pit_stops$driverId == 153),]) ==
-  pit_stops_driver_race$numStops[pit_stops_driver_race$raceId == 841 & pit_stops_driver_race$driverId == 153]
+  pit_stops_driver_race$num_stops[pit_stops_driver_race$raceId == 841 & pit_stops_driver_race$driverId == 153]
 
 ```
 
@@ -199,7 +199,6 @@ eda_driver_level$Season <- as.factor(eda_driver_level$Season)
 summary(eda_driver_level)
 #EDA: can we look at age at time of race? (are younger drivers fan favorites?)
 hist(as.numeric(eda_race_level$age_at_race))
-
 
 #EDA: number of stops?
 hist(eda_race_level$num_stops)
