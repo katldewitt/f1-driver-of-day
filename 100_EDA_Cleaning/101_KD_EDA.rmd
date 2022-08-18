@@ -154,8 +154,8 @@ create_race_level_ds <- function(){
     
     #NEW VAR: afternoon race?
     eda_race_level$afternoon_race <-  strptime(eda_race_level$time, "%H:%M:%S") >=  strptime("12:00:00", "%H:%M:%S")
-    #TODO: do all these times make sense? some are at 5:10 or 6:00, which is way too early...
-    #TODO: are they in track time or local time?
+    #Q: do all these times make sense? some are at 5:10 or 6:00, which is way too early...
+    #A: The times are all in UTC
     
     #Join with drivers_standings on driverId + raceId 
     driver_standings <-list_of_df[["driver_standings"]]
@@ -184,8 +184,6 @@ create_race_level_ds <- function(){
 
 
 #Variables to create
-
-#TODO: how Tire pattern/usage?
 #TODO: constructor cup winner? - constructors -> constructor_results
 
 eda_race_level <- create_race_level_ds()
@@ -208,6 +206,7 @@ eda_driver_level$driverId <- as.factor(eda_driver_level$driverId)
 eda_driver_level$Season <- as.factor(eda_driver_level$Season)
 
 summary(eda_driver_level)
+
 #EDA: can we look at age at time of race? (are younger drivers fan favorites?)
 hist(as.numeric(eda_race_level$age_at_race))
 
@@ -217,7 +216,7 @@ hist(eda_race_level$num_stops)
 #EDA: time of race?
 table(eda_race_level$afternoon_race)
 
-#EDA: Finishing the race/staus?
+#EDA: Finishing the race/status?
 table(eda_race_level$status)
 ```
 
