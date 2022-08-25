@@ -1,0 +1,342 @@
+---
+title: "Exploratory Data Analysis of F1 data"
+date: '2022-07-05'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(wordcloud)
+library(wordcloud2)
+#library(devtools)
+library(stringr)        
+#install.packages("tidytext")
+library(tidytext)
+#install.packages("textdata")
+library(textdata)
+#install.packages("sentimentr")
+library(sentimentr)
+library(readr)
+library(readxl)
+library(data.table)
+#library(janitor)
+#library(magrittr)
+library(tm)
+#library(ggpubr)
+#library(reshape2) 
+#library(lexicon)
+#library(syuzhet)
+#library(forcats)
+```
+
+
+```{r}
+urlfile="https://raw.githubusercontent.com/katldewitt/f1-driver-of-day/main/data/Kaggle_DS/circuits.csv"
+circuits <- read.csv(url(urlfile))
+urlfile1="https://raw.githubusercontent.com/katldewitt/f1-driver-of-day/main/data/Kaggle_DS/constructor_results.csv"
+constructor_results <- read.csv(url(urlfile1))
+urlfile2="https://raw.githubusercontent.com/katldewitt/f1-driver-of-day/main/data/Kaggle_DS/constructor_standings.csv"
+constructor_standings <- read.csv(url(urlfile2))
+urlfile3="https://raw.githubusercontent.com/katldewitt/f1-driver-of-day/main/data/Kaggle_DS/constructors.csv"
+constructor <- read.csv(url(urlfile3))
+urlfile4="https://raw.githubusercontent.com/katldewitt/f1-driver-of-day/main/data/Kaggle_DS/driver_standings.csv"
+driver_standings <- read.csv(url(urlfile4))
+urlfile5="https://raw.githubusercontent.com/katldewitt/f1-driver-of-day/main/data/Kaggle_DS/drivers.csv"
+drivers <- read.csv(url(urlfile5))
+urlfile6="https://raw.githubusercontent.com/katldewitt/f1-driver-of-day/main/data/Kaggle_DS/lap_times.csv"
+lap_times <- read.csv(url(urlfile6))
+urlfile7="https://raw.githubusercontent.com/katldewitt/f1-driver-of-day/main/data/Kaggle_DS/pit_stops.csv"
+pit_stops <- read.csv(url(urlfile7))
+urlfile8="https://raw.githubusercontent.com/katldewitt/f1-driver-of-day/main/data/Kaggle_DS/qualifying.csv"
+qualifying <- read.csv(url(urlfile8))
+urlfile9="https://raw.githubusercontent.com/katldewitt/f1-driver-of-day/main/data/Kaggle_DS/races.csv"
+races <- read.csv(url(urlfile9))
+urlfile10="https://raw.githubusercontent.com/katldewitt/f1-driver-of-day/main/data/Kaggle_DS/results.csv"
+results <- read.csv(url(urlfile10))
+urlfile11="https://raw.githubusercontent.com/katldewitt/f1-driver-of-day/main/data/Kaggle_DS/seasons.csv"
+seasons <- read.csv(url(urlfile11))
+urlfile12="https://raw.githubusercontent.com/katldewitt/f1-driver-of-day/main/data/Kaggle_DS/sprint_results.csv"
+sprint_results <- read.csv(url(urlfile12))
+urlfile13="https://raw.githubusercontent.com/katldewitt/f1-driver-of-day/main/data/Kaggle_DS/status.csv"
+status <- read.csv(url(urlfile13))
+urlfile14="https://raw.githubusercontent.com/katldewitt/f1-driver-of-day/main/data/DriverOfDay.csv"
+driverofday <- read.csv(url(urlfile14))
+```
+
+
+# Driver of the Day EDA
+
+##Driver of the Day Dataset
+```{r}
+glimpse(driverofday)
+sort(table(driverofday$Driver.of.The.Day), decreasing=TRUE)
+unique(driverofday$Season)
+#Driver of the day data is only available at the earliest 2016. All data sets will only use 2016 to the most recent.
+```
+
+Verstappen has many driver of the day awards in all years but 2017, where Vettel had the most. The overall distribution of the winners changes per years. 
+```{r}
+#Distribution of Driver of the day by season and race
+ggplot(data = filter(driverofday), aes(x = Driver.of.The.Day)) + geom_bar() + 
+    facet_wrap(~Season) + xlab("Driver") + ylab("Count") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + ggtitle("Distribution of Race in regard of Driver of the Day in 2016-2022") +  theme(plot.title = element_text(hjust = 0.5)) 
+```
+
+Verstappen received driver of the day the most, followed by Vettel and Hamilton.
+```{r}
+#Count of driver of the day 
+driver_day <- driverofday %>% group_by(Driver.of.The.Day) %>% summarize(count_driver_day = n()) %>% arrange(desc(count_driver_day))
+ggplot(data = filter(driver_day), aes(x = reorder(Driver.of.The.Day,-count_driver_day),y=count_driver_day)) + geom_bar(stat='identity') + xlab("Driver") + ylab("Count") + scale_x_discrete(guide = guide_axis(n.dodge=2)) + ggtitle("Driver of the Day in 2016-2022") + theme(plot.title = element_text(hjust = 0.5))
+```
+Drivers who were drivers of the day the most by year:
+2016: Verstappen
+2017: Vettel
+2018: Verstappen
+2019: Verstappen
+2020: Verstappen
+2021: Perez
+2022: Lerclerc
+
+```{r}
+driver_day2 <- driverofday %>% group_by(Season,Driver.of.The.Day) %>% summarize(count_driver_day = n()) %>% arrange(desc(count_driver_day))
+ggplot(data = filter(driver_day2), aes(x = as.factor(Season),y=count_driver_day,fill=Driver.of.The.Day)) + geom_bar(stat='identity') + xlab("Season") + ylab("Count") + scale_x_discrete(guide = guide_axis(n.dodge=2)) + ggtitle("Distribution of Driver of the Day by Season") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+## Addition of driver information
+```{r}
+glimpse(drivers)
+```
+
+Join Drivers information to Driver of the Day
+```{r}
+#Cleanest way to combining the data (some drivers have unique driver references)
+driverofday_m <- driverofday
+driverofday_m$Driver.of.The.Day[driverofday_m$Driver.of.The.Day=="Verstappen"] <- c("max_verstappen")
+driverofday_m$Driver.of.The.Day[driverofday_m$Driver.of.The.Day=="Magnussen"] <- c("kevin_magnussen")
+driverofday_m$Driver.of.The.Day[driverofday_m$Driver.of.The.Day=="Schumacher"] <- c("mick_schumacher")
+driverofday_m$Driver.of.The.Day <- tolower(driverofday_m$Driver.of.The.Day)
+df <- driverofday_m %>% left_join(drivers,by=c("Driver.of.The.Day" = "driverRef"))
+df <- df %>% mutate(driver_full=paste(df$forename,df$surname))
+```
+
+
+## Addition of Constructor
+```{r}
+glimpse(constructor)
+```
+```{r}
+constructor2 <- constructor
+constructor2$name[constructor2$name=="Haas F1 Team"] <- c("Haas") #Haas had unique constructor reference
+df <- df %>% left_join(constructor2,by=c("Team"="name"))
+
+```
+
+Red Bull has had the most drivers who have won driver of the day. 
+```{r}
+team_driver_day <- df %>% group_by(Team) %>% summarize(count_team_day = n()) %>% arrange(desc(count_team_day))
+ggplot(data = filter(team_driver_day), aes(x = reorder(Team,-count_team_day),y=count_team_day)) + geom_bar(stat='identity') + xlab("Team") + ylab("Count") + scale_x_discrete(guide = guide_axis(n.dodge=2)) + ggtitle("Distribution of Team in regard of Driver of the Day in 2016-2022") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+The top 2 drivers received the driver of the day for one team. Vettel received for 2 different teams, but he won the majority with Ferrari. It is a mix for many other drivers.
+```{r}
+ggplot(data = df, aes(x = driver_full,fill=Team)) + geom_bar() + xlab("Driver") + ylab("Count") + scale_x_discrete(guide = guide_axis(n.dodge=1)) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ ggtitle("Number of driver of the day accounting for Team in 2016-2022") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+Some F1 teams changed the names between 2016-2022. To understand if a driver won driver of the day with the same team (despite name changes), the graph below demonstrates which drivers won driver of the day for each individual team name (not accounting for team name changes). 
+```{r}
+#Without regard to team name change
+ggplot(data = df, aes(x = Team,fill=driver_full)) + geom_bar() + xlab("Driver") + ylab("Count") + scale_x_discrete(guide = guide_axis(n.dodge=1)) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ ggtitle("Count of driver of the day for each team accounting for driver") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+To understand if a driver won driver of the day with the same team (despite name changes), the graph below demonstrates which drivers won driver of the day for each team. 
+All teams except for Alpha Tauri/Toro Rosso and Williams have more than 1 driver. Gasly is an outlier. 
+```{r}
+#With regard to name change
+df_team <- df
+df_team$Team[df_team$Team=="Alfa Romeo"] <- c("Sauber+Alfa Romeo")
+df_team$Team[df_team$Team=="Sauber"] <- c("Sauber+Alfa Romeo")
+df_team$Team[df_team$Team=="Alpha Tauri"] <- c("Toro Rosso+Alpha Tauri")
+df_team$Team[df_team$Team=="Toro Rosso"] <- c("Toro Rosso+Alpha Tauri")
+df_team$Team[df_team$Team=="Force India"] <- c("Force India+Racing Point+Aston Martin")
+df_team$Team[df_team$Team=="Racing Point"] <- c("Force India+Racing Point+Aston Martin")
+df_team$Team[df_team$Team=="Aston Martin"] <- c("Force India+Racing Point+Aston Martin")
+df_team$Team[df_team$Team=="Renault"] <- c("Renault+Alpine")
+df_team$Team[df_team$Team=="Alpine"] <- c("Renault+Alpine")
+```
+```{r}
+ggplot(data = df_team, aes(x = Team,fill=driver_full)) + geom_bar() + xlab("Driver") + ylab("Count") + scale_x_discrete(guide = guide_axis(n.dodge=1)) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ ggtitle("Distribution of Race in regard of Driver of the Day in 2016-2022")
+```
+
+
+## Addition of race to driver of the day
+```{r}
+glimpse(races)
+```
+
+Added race to driver of the day/driver
+```{r}
+df <- df %>% mutate(race_year=paste(Race,Season))
+races2 <- races %>% mutate(race_year = paste(name,year))
+df <- df %>% left_join(races2,by="race_year")
+sum(is.na(df$raceId)) #to ensure no errors on the join
+```
+
+# Addition of driver standings and constructor standings to the driver of day
+```{r}
+df <- df %>% left_join(driver_standings, by=c('raceId'='raceId','driverId'='driverId'))
+df <- df %>% left_join(constructor_standings, by=c('raceId'='raceId','constructorId'='constructorId'))
+glimpse(df)
+#renamed relevant column names to be more intuitive
+colnames(df)[colnames(df) == 'points.x'] <- 'driver_points'
+colnames(df)[colnames(df) == 'position.x'] <- 'driver_position'
+colnames(df)[colnames(df) == 'positionText.x'] <- 'driver_positionText'
+colnames(df)[colnames(df) == 'wins.x'] <- 'driver_wins'
+colnames(df)[colnames(df) == 'points.y'] <- 'constructor_points'
+colnames(df)[colnames(df) == 'position.y'] <- 'constructor_position'
+colnames(df)[colnames(df) == 'positionText.y'] <- 'constructor_positionText'
+colnames(df)[colnames(df) == 'wins.y'] <- 'constructor_wins'
+
+```
+
+Most drivers of the day were ranked in the top 6. 
+```{r}
+#Rank of driver
+ggplot(data = df, aes(x = as.factor(driver_position),fill=driver_full)) + geom_bar() + xlab("Position") + ylab("Count") + scale_x_discrete(guide = guide_axis(n.dodge=1)) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ ggtitle("Driver Position in regard of Driver of the Day in 2016-2022") + theme(plot.title = element_text(hjust = 0.5))
+```
+Most drivers of the days are from the top three teams. The only teams in the top four have been Red Bull, Mercedes, and Ferrari. 
+```{r}
+#Rank of team
+ggplot(data = df, aes(x = as.factor(constructor_position),fill=Team)) + geom_bar() + xlab("Position") + ylab("Count") + scale_x_discrete(guide = guide_axis(n.dodge=1)) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ ggtitle("Team Position in regard of Driver of the Day in 2016-2022") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+# Addition of Circuit to Driver of the Day
+```{r}
+glimpse(circuits)
+```
+
+Added circuit to driver of the day/driver/race
+```{r}
+df2 <- df %>% left_join(circuits,by="circuitId")
+sum(is.name(df2$circuitId))
+glimpse(df2)
+```
+
+Drivers of Day by Geographic location of the race
+
+Appears to be a mix across races. 
+Not many patterns by based on driver nationality. 
+No patterns based on driver nationality and the host race country.
+```{r}
+#Driver of Day by Race
+ggplot(data = df2, aes(x = as.factor(Race),fill=driver_full)) + geom_bar() + xlab("Race") + ylab("Count") + scale_x_discrete(guide = guide_axis(n.dodge=1)) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ ggtitle("Driver of the Day by Race in 2016-2022") + theme(plot.title = element_text(hjust = 0.5))
+
+#Driver of Day by Country
+ggplot(data = df2, aes(x = as.factor(Race),fill=nationality.x)) + geom_bar() + xlab("Race") + ylab("Count") + scale_x_discrete(guide = guide_axis(n.dodge=1)) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ ggtitle("Driver of the Day's Nationality by Race in 2016-2022") + theme(plot.title = element_text(hjust = 0.5))
+
+#Driver of Day Nationality by Country
+ggplot(data = df2, aes(x = as.factor(country),fill=nationality.x)) + geom_bar() + xlab("Country") + ylab("Count") + scale_x_discrete(guide = guide_axis(n.dodge=1)) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ ggtitle("Driver of the Day's Nationality by Race Country in 2016-2022") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+
+
+
+
+# Driver of the Day trends based on the results of each race
+```{r}
+glimpse(results)
+glimpse(df)
+```
+
+```{r}
+#Joined information from races, drivers, constructors, circuits, and driver of the day to build out full results data set 
+df_results <- results %>% left_join(races,by="raceId")
+df_results <- df_results%>%left_join(drivers,by="driverId")
+df_results <- df_results%>%left_join(constructor,by="constructorId")
+df_results <- df_results %>% mutate(driver_full=paste(df_results$forename,df_results$surname))
+df_results <- df_results%>%left_join(circuits,by="circuitId")
+df_results2 <- df_results%>%inner_join(df,by="raceId")
+glimpse(df_results2)
+```
+```{r}
+#Check to see if combination looks about right compared to Driver of the Day dataset
+df_results2 <- df_results2 %>% filter(!is.na(Driver.of.The.Day))
+check <- df_results2 %>% group_by(Driver.of.The.Day,raceId)%>% summarize(count_driver_day = n()) %>% arrange(desc(count_driver_day))
+sort(table(check$Driver.of.The.Day),decreasing=TRUE)
+sort(table(driverofday$Driver.of.The.Day), decreasing=TRUE)
+```
+
+```{r}
+#Renamed column names
+colnames(df_results2)[colnames(df_results2) == 'driverId.x'] <- 'driverID_results'
+colnames(df_results2)[colnames(df_results2) == 'constructorId.x'] <- 'constructorID_results'
+colnames(df_results2)[colnames(df_results2) == 'driverId.y'] <- 'driverID_driverofday'
+colnames(df_results2)[colnames(df_results2) == '"driver_full.x'] <- 'driver_full_results'
+colnames(df_results2)[colnames(df_results2) == '"driver_full.y'] <- 'driver_full_driverofday'
+```
+```{r}
+glimpse(driver_standings)
+glimpse(constructor_standings)
+```
+Added driver standings, constructor standings, and status 
+```{r}
+df_results3 <- df_results2%>%inner_join(driver_standings,by=c('raceId'='raceId','driverID_results'='driverId')) 
+df_results3 <- df_results3%>%inner_join(constructor_standings,by=c('raceId'='raceId','constructorID_results'='constructorId'))
+df_results3 <- df_results3%>%inner_join(status,by='statusId')
+glimpse(df_results3)
+```
+
+Analysis to determine if there is a correlation between where the driver started the race and ended the race with driver of the day. 
+```{r}
+#How many places did they move up?
+##Created variable grid_to_position that calculates how many positions a driver moved. Note that if a driver did not finish, positionOrder listed 20. 
+df_results3 <- df_results3 %>%mutate(grid_to_position=(as.numeric(grid)-as.numeric(positionOrder)))
+#Filtered so only looking at the drivers that were drivers of the day
+results_driverofday <- df_results3 %>% filter(driverID_results ==driverID_driverofday)
+glimpse(results_driverofday)
+
+#Distribution of positions gained/lost for drivers of the day
+ggplot(data = results_driverofday, aes(x = as.factor(grid_to_position),fill=driver_full.y)) + geom_bar() + xlab("Number of positions gained or lost") + ylab("Number of Drivers") + ggtitle("Distribution of Positions Gained/Lost for Drivers of the Day in 2016-2022") + theme(plot.title = element_text(hjust = 0.5))
+
+#Boxplot to determine how drivers of the day compared with the number of positions gained/lost
+ggplot(data=results_driverofday,aes(x = driver_full.y, y = grid_to_position)) + 
+  geom_boxplot()+ 
+  ggtitle("Distribution of positions lost/gained by driver") +
+  theme(plot.title = element_text(hjust = 0.5))+scale_x_discrete(guide = guide_axis(n.dodge=1)) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+#Distributions of positions gained/lost for drivers of the day while addressing that the PositionOrder variable uses 20 if DNF. Included status to note the drivers that won driver of the day but DNF.
+ggplot(data = results_driverofday, aes(x = as.factor(grid_to_position),fill=status)) + geom_bar() + xlab("Positiosn Lost or Gained") + ylab("Number of drivers") + ggtitle(" regard of Driver of the Day in 2016-2022") + theme(plot.title = element_text(hjust = 0.5))
+
+
+#Driver that moved up the most places from start driver of day?
+
+
+
+```
+
+Analysis to determine if there is a correlation between driver of the day, their driver standings, and the number of positions lost/gained.
+```{r}
+#Graph to determine driver of the day's driver standings
+ggplot(data=results_driverofday,aes(x = driver_full.y, y = driver_position)) + 
+  geom_boxplot()+ 
+  ggtitle("Distribution of driver of day driver standings") +
+  theme(plot.title = element_text(hjust = 0.5))+scale_x_discrete(guide = guide_axis(n.dodge=1)) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+#Graph to understand the driver standings for a given race, how many places they lost and gained, 
+ggplot(data = results_driverofday, aes(x = grid_to_position,y=driver_position,color=driver_full.y)) + geom_jitter() + xlab("Amount of positions lost or gained") + ylab("Driver standing") + ggtitle("Distribution of Race in regard of Driver of the Day in 2016-2022") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+Analysis to determine team standings for the team who had a driver win drive of the day. 
+```{r}
+#Placement of the team in standings
+#Graph to determine driver of the day's driver standings
+ggplot(data=results_driverofday,aes(x = Team, y = constructor_position)) + 
+  geom_boxplot()+ 
+  ggtitle("Distribution of driver of day constructor standings") +
+  theme(plot.title = element_text(hjust = 0.5))+scale_x_discrete(guide = guide_axis(n.dodge=1)) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+```
+
