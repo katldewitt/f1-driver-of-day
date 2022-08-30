@@ -403,4 +403,8 @@ ggplot(data=eda_race_level,aes(x = Team, y = constructor_position)) +
 
 ```
 
+```{r}
+write.csv(eda_race_level, "../data/eda_race_level.csv", row.names=FALSE)
+
+```
 
