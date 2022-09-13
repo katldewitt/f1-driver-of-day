@@ -1,5 +1,5 @@
 ---
-title: "EDA-103"
+title: "EDA-104"
 date: '2022-08-25'
 output: html_document
 ---
@@ -75,7 +75,6 @@ create_driver_level_ds <- function(){
       #1. create a modified version of Driver of the day with some driver reference updates
       driverofday_m <- list_of_df[["driver_of_day"]]
       driverofday_m$Driver.of.The.Day[driverofday_m$Driver.of.The.Day=="Verstappen"] <- c("max_verstappen")
-      driverofday_m$Driver.of.The.Day[driverofday_m$Driver.of.The.Day=="Kyvat"] <- c("kvyat") #spelling error that needs to be fixed
       driverofday_m$Driver.of.The.Day[driverofday_m$Driver.of.The.Day=="Magnussen"] <- c("kevin_magnussen")
       driverofday_m$Driver.of.The.Day[driverofday_m$Driver.of.The.Day=="Schumacher"] <- c("mick_schumacher")
       
@@ -162,7 +161,7 @@ create_race_level_ds <- function(){
     #Join with drivers_standings on driverId + raceId 
     driver_standings <-list_of_df[["driver_standings"]]
     eda_race_level <- eda_race_level %>% left_join(driver_standings, by = c("raceId", "driverId"))
-    #TODO: any cols to drop?
+    
 
     #Join pit_stops_driver race on driverId + raceID to bring in Number of Stops
     eda_race_level <- eda_race_level %>% left_join(pit_stops_driver_race, by = c("raceId", "driverId"))
@@ -205,12 +204,96 @@ eda_race_level$Team[is.na(eda_race_level$constructorId.x)]
 #we expect this to be 1, constructorID from race result is same as constructor...?
 mean(eda_race_level$constructorId.x == eda_race_level$constructorId.y, na.rm = T)
 eda_race_level$Driver.of.The.Day[eda_race_level$constructorId.x != eda_race_level$constructorId.y]
-#TODO: dig into this more
 
 
 #Q: Why do we have NA's in this dataset?
 eda_race_level[is.na(eda_race_level$points),]
 #A: The NA's are due to when we pulled Kaggle vs the most recent driver of the day.
+```
+
+## Building results file
+
+```{r}
+create_results_level_ds <- function(){
+  if (! exists("eda_driver_level")) {
+    eda_driver_level <- create_driver_level_ds()
+  }
+  
+   if(! exists("eda_results_level")) {
+     results_df <- list_of_df[["results"]]
+     results_df$raceTime <- results_df$time
+     #drop time, rank (duplicate to position Order), drop points, drop positionText
+    results_df <- results_df[, !(names(results_df) %in% c("time", "rank", "positionText", "position", "points", "number"))]
+      #create datset
+     #Join to race level dataset based on race/year
+    races_df <- list_of_df[["races"]]
+    races_df$Race_name <- races_df$name
+    #drop unneeded variables 
+    races_df <- races_df[, !(names(races_df) %in% c("round", "url", "name"))]
+        
+    eda_results_level <- results_df %>% inner_join(races_df, by = c("raceId"))
+    
+    #join results with driver data
+    eda_results_level <- eda_results_level %>% inner_join(list_of_df[["drivers"]], by = c("driverId"))
+    eda_results_level$dob_driver <- eda_results_level$dob
+    eda_results_level <- eda_results_level[, !(names(eda_results_level) %in% c("number", "code", "forename", "surname", "url", "dob"))]
+    
+    #Translate date to date
+    eda_results_level$date <- as.Date(eda_results_level$date, "%Y-%m-%d")
+    eda_results_level$dob_driver <- as.Date(eda_results_level$dob_driver, "%Y-%m-%d")
+    
+    #NEW VAR: Create age at race
+    eda_results_level$age_at_race <- as.numeric(floor((eda_results_level$date - eda_race_level$dob) / 365.25))
+    
+    
+    #Join with drivers_standings on driverId + raceId 
+    driver_standings <-list_of_df[["driver_standings"]]
+    eda_results_level <- eda_results_level %>% left_join(driver_standings, by = c("raceId", "driverId"))
+    
+    #Join pit_stops_driver race on driverId + raceID to bring in Number of Stops
+    eda_results_level <- eda_results_level %>% left_join(pit_stops_driver_race, by = c("raceId", "driverId"))
+    
+    #Join status and StatusId
+    eda_results_level <- eda_results_level %>% left_join(list_of_df[["status"]], by = c("statusId"))
+    
+    #Join with constructors on team name
+    constructors <- list_of_df[["constructors"]]
+    constructors <-  constructors[, !(names(constructors) %in% c("url", "nationality", "constructorRef"))]
+    #Temp fixes for some teams
+    constructors$name[constructors$name == "Alpine F1 Team"] = "Alpine"
+    constructors$name[constructors$name == "Haas F1 Team"] = "Haas"
+    constructors$name[constructors$name == "AlphaTauri"] = "Alpha Tauri"
+    eda_results_level <- eda_results_level %>% left_join(constructors, by = c("constructorId"))
+    
+    constructor_standings <-list_of_df[["constructor_standings"]]
+    colnames(constructor_standings)[colnames(constructor_standings) == 'points'] <- 'constructor_points'
+    colnames(constructor_standings)[colnames(constructor_standings) == 'position'] <- 'constructor_position'
+    colnames(constructor_standings)[colnames(constructor_standings) == 'positionText'] <- 'constructor_positionText'
+    colnames(constructor_standings)[colnames(constructor_standings) == 'wins'] <- 'constructor_wins'
+    eda_reulst_level <- eda_results_level %>% left_join(constructor_standings, by = c("raceId", "constructorId"))
+    eda_driver_level2 <- eda_driver_level
+    colnames(eda_driver_level2)[colnames(eda_driver_level2) == 'driverId'] <- 'driverId_driverofday'
+    eda_results_level <- eda_results_level %>% inner_join(eda_driver_level2, by = c("year" = "Season", "Race_name" = "Race"))
+    
+   }
+  else{
+    eda_results_level
+  }
+
+}
+
+
+
+eda_results_level <- create_results_level_ds()
+summary(eda_results_level)
+
+
+```
+
+```{r}
+eda_results_level <- eda_results_level %>% mutate(driver.of.day.ind = if_else(
+  driverId == driverId_driverofday, 1, 0))
+  
 ```
 
 
@@ -257,8 +340,12 @@ ggplot(data = filter(eda_race_level), aes(x = Driver.of.The.Day)) + geom_bar() +
 Verstappen received driver of the day the most, followed by Vettel and Hamilton.
 ```{r}
 #Count of driver of the day 
-driver_day <- eda_race_level %>% group_by(Driver.of.The.Day) %>% summarize(count_driver_day = n()) %>% arrange(desc(count_driver_day))
-ggplot(data = filter(driver_day), aes(x = reorder(Driver.of.The.Day,-count_driver_day),y=count_driver_day)) + geom_bar(stat='identity') + xlab("Driver") + ylab("Count") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + ggtitle("Driver of the Day in 2016-2022") + theme(plot.title = element_text(hjust = 0.5))
+driver_day <- eda_race_level %>% group_by(Driver.of.The.Day) %>% 
+  summarize(count_driver_day = n()) %>% arrange(desc(count_driver_day))
+ggplot(data = filter(driver_day), aes(x = reorder(Driver.of.The.Day,-count_driver_day),y=count_driver_day)) + 
+  geom_bar(stat='identity') + xlab("Driver") + ylab("Count") + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+  ggtitle("Driver of the Day in 2016-2022") + theme(plot.title = element_text(hjust = 0.5))
 ```
 Drivers who were drivers of the day the most by year:
 2016: Verstappen
@@ -267,11 +354,15 @@ Drivers who were drivers of the day the most by year:
 2019: Verstappen
 2020: Verstappen
 2021: Perez
-2022: Leclerc and Verstappen
+2022: Leclerc and Verstappen (as of July 31)
 
 ```{r}
-driver_day2 <- eda_race_level %>% group_by(Season,Driver.of.The.Day) %>% summarize(count_driver_day = n()) %>% arrange(desc(count_driver_day))
-ggplot(data = filter(driver_day2), aes(x = as.factor(Season),y=count_driver_day,fill=Driver.of.The.Day)) + geom_bar(stat='identity') + xlab("Season") + ylab("Count") + scale_x_discrete(guide = guide_axis(n.dodge=2)) + ggtitle("Distribution of Driver of the Day by Season") + theme(plot.title = element_text(hjust = 0.5))
+driver_day2 <- eda_race_level %>% group_by(Season,Driver.of.The.Day) %>% 
+  summarize(count_driver_day = n()) %>% arrange(desc(count_driver_day))
+ggplot(data = filter(driver_day2), aes(x = as.factor(Season),y=count_driver_day,fill=Driver.of.The.Day)) + geom_bar(stat='identity') + xlab("Season") + ylab("Count") + 
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) + 
+  ggtitle("Distribution of Driver of the Day by Season") + 
+  theme(plot.title = element_text(hjust = 0.5))
 ```
 
 ### Teams with Drivers of the Day Observations
@@ -279,19 +370,32 @@ ggplot(data = filter(driver_day2), aes(x = as.factor(Season),y=count_driver_day,
 Red Bull has had the most drivers who have won driver of the day. 
 ```{r}
 team_driver_day <- eda_race_level %>% group_by(Team) %>% summarize(count_team_day = n()) %>% arrange(desc(count_team_day))
-ggplot(data = filter(team_driver_day), aes(x = reorder(Team,-count_team_day),y=count_team_day)) + geom_bar(stat='identity') + xlab("Team") + ylab("Count") + scale_x_discrete(guide = guide_axis(n.dodge=2)) + ggtitle("Distribution of Team in regard of Driver of the Day in 2016-2022") + theme(plot.title = element_text(hjust = 0.5))
+ggplot(data = filter(team_driver_day), aes(x = reorder(Team,-count_team_day),y=count_team_day)) + geom_bar(stat='identity') + xlab("Team") + 
+  ylab("Count") + scale_x_discrete(guide = guide_axis(n.dodge=2)) + 
+  ggtitle("Distribution of Team in regard of Driver of the Day in 2016-2022") + 
+  theme(plot.title = element_text(hjust = 0.5))
 ```
 
 Out of the top 3 drivers, 2 drivers received the driver of the day for one team. Vettel received for 2 different teams, but he won the majority with Ferrari. It is a mix for many other drivers.
 ```{r}
-ggplot(data = eda_race_level, aes(x = Driver.of.The.Day,fill=Team)) + geom_bar() + xlab("Driver") + ylab("Count") + scale_x_discrete(guide = guide_axis(n.dodge=1)) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ ggtitle("Number of driver of the day accounting for Team in 2016-2022") + theme(plot.title = element_text(hjust = 0.5))
+ggplot(data = eda_race_level, aes(x = Driver.of.The.Day,fill=Team)) + 
+  geom_bar() + xlab("Driver") + ylab("Count") + 
+  scale_x_discrete(guide = guide_axis(n.dodge=1)) + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ 
+  ggtitle("Number of driver of the day accounting for Team in 2016-2022") + 
+  theme(plot.title = element_text(hjust = 0.5))
 ```
 
 
 Some F1 teams changed the names between 2016-2022. To understand if a driver won driver of the day with the same team (despite name changes), the graph below demonstrates which drivers won driver of the day for each individual team name (not accounting for team name changes). 
 ```{r}
 #Without regard to team name change
-ggplot(data = eda_race_level, aes(x = Team,fill=Driver.of.The.Day)) + geom_bar() + xlab("Driver") + ylab("Count") + scale_x_discrete(guide = guide_axis(n.dodge=1)) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ ggtitle("Count of driver of the day for each team accounting for driver") + theme(plot.title = element_text(hjust = 0.5))
+ggplot(data = eda_race_level, aes(x = Team,fill=Driver.of.The.Day)) + 
+  geom_bar() + xlab("Driver") + ylab("Count") + 
+  scale_x_discrete(guide = guide_axis(n.dodge=1)) + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ 
+  ggtitle("Count of driver of the day for each team accounting for driver") + 
+  theme(plot.title = element_text(hjust = 0.5))
 ```
 
 To understand if a driver won driver of the day with the same team (despite name changes), the graph below demonstrates which drivers won driver of the day for each team. 
@@ -310,7 +414,11 @@ df_team$Team[df_team$Team=="Renault"] <- c("Renault+Alpine")
 df_team$Team[df_team$Team=="Alpine"] <- c("Renault+Alpine")
 ```
 ```{r}
-ggplot(data = df_team, aes(x = Team,fill=Driver.of.The.Day)) + geom_bar() + xlab("Driver") + ylab("Count") + scale_x_discrete(guide = guide_axis(n.dodge=1)) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ ggtitle("Distribution of Race in regard of Driver of the Day in 2016-2022")
+ggplot(data = df_team, aes(x = Team,fill=Driver.of.The.Day)) + 
+  geom_bar() + xlab("Driver") + ylab("Count") + 
+  scale_x_discrete(guide = guide_axis(n.dodge=1)) + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ 
+  ggtitle("Distribution of Race in regard of Driver of the Day in 2016-2022")
 ```
 
 
@@ -318,7 +426,12 @@ ggplot(data = df_team, aes(x = Team,fill=Driver.of.The.Day)) + geom_bar() + xlab
 Most drivers of the day were ranked in the top 6. 
 ```{r}
 #Rank of driver
-ggplot(data = eda_race_level, aes(x = as.factor(position),fill=Driver.of.The.Day)) + geom_bar() + xlab("Position") + ylab("Count") + scale_x_discrete(guide = guide_axis(n.dodge=1)) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ ggtitle("Driver Position in regard of Driver of the Day in 2016-2022") + theme(plot.title = element_text(hjust = 0.5))
+ggplot(data = eda_race_level, aes(x = as.factor(position),fill=Driver.of.The.Day)) + 
+  geom_bar() + xlab("Position") + ylab("Count") + 
+  scale_x_discrete(guide = guide_axis(n.dodge=1)) + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ 
+  ggtitle("Driver Position in regard of Driver of the Day in 2016-2022") + 
+  theme(plot.title = element_text(hjust = 0.5))
 ```
 Most drivers of the days are from the top three teams. The only teams in the top four have been Red Bull, Mercedes, and Ferrari. 
 ```{r}
@@ -335,7 +448,12 @@ eda_race_level <- eda_race_level %>% left_join(constructor_standings, by = c("ra
 
 ```{r}
 #Rank of team
-ggplot(data = eda_race_level, aes(x = as.factor(constructor_position),fill=Team)) + geom_bar() + xlab("Position") + ylab("Count") + scale_x_discrete(guide = guide_axis(n.dodge=1)) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ ggtitle("Team Position in regard of Driver of the Day in 2016-2022") + theme(plot.title = element_text(hjust = 0.5))
+ggplot(data = eda_race_level, aes(x = as.factor(constructor_position),fill=Team)) + 
+  geom_bar() + xlab("Position") + ylab("Count") + 
+  scale_x_discrete(guide = guide_axis(n.dodge=1)) + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ 
+  ggtitle("Team Position in regard of Driver of the Day in 2016-2022") + 
+  theme(plot.title = element_text(hjust = 0.5))
 ```
 
 
@@ -347,7 +465,12 @@ Not many patterns by based on driver nationality.
 No patterns based on driver nationality and the host race country.
 ```{r}
 #Driver of Day by Race
-ggplot(data = eda_race_level, aes(x = as.factor(Race),fill=Driver.of.The.Day)) + geom_bar() + xlab("Race") + ylab("Count") + scale_x_discrete(guide = guide_axis(n.dodge=1)) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ ggtitle("Driver of the Day by Race in 2016-2022") + theme(plot.title = element_text(hjust = 0.5))
+ggplot(data = eda_race_level, aes(x = as.factor(Race),fill=Driver.of.The.Day)) + 
+  geom_bar() + xlab("Race") + ylab("Count") + 
+  scale_x_discrete(guide = guide_axis(n.dodge=1)) + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ 
+  ggtitle("Driver of the Day by Race in 2016-2022") + 
+  theme(plot.title = element_text(hjust = 0.5))
 
 ```
 
@@ -364,7 +487,11 @@ eda_race_level <- eda_race_level %>%mutate(grid_to_position=(as.numeric(grid)-as
 
 
 #Distribution of positions gained/lost for drivers of the day
-ggplot(data = eda_race_level, aes(x = as.factor(grid_to_position),fill=Driver.of.The.Day)) + geom_bar() + xlab("Number of positions gained or lost") + ylab("Number of Drivers") + ggtitle("Distribution of Positions Gained/Lost for Drivers of the Day in 2016-2022") + theme(plot.title = element_text(hjust = 0.5))
+ggplot(data = eda_race_level, aes(x = as.factor(grid_to_position),fill=Driver.of.The.Day)) + 
+  geom_bar() + xlab("Number of positions gained or lost") + 
+  ylab("Number of Drivers") + 
+  ggtitle("Distribution of Positions Gained/Lost for Drivers of the Day in 2016-2022") + 
+  theme(plot.title = element_text(hjust = 0.5))
 
 #Boxplot to determine how drivers of the day compared with the number of positions gained/lost
 ggplot(data=eda_race_level,aes(x = Driver.of.The.Day, y = grid_to_position)) + 
@@ -373,10 +500,10 @@ ggplot(data=eda_race_level,aes(x = Driver.of.The.Day, y = grid_to_position)) +
   theme(plot.title = element_text(hjust = 0.5))+scale_x_discrete(guide = guide_axis(n.dodge=1)) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
 #Distributions of positions gained/lost for drivers of the day while addressing that the PositionOrder variable uses 20 if DNF. Included status to note the drivers that won driver of the day but DNF.
-ggplot(data = eda_race_level, aes(x = as.factor(grid_to_position),fill=status)) + geom_bar() + xlab("Positions Lost or Gained") + ylab("Number of drivers") + ggtitle(" regard of Driver of the Day in 2016-2022") + theme(plot.title = element_text(hjust = 0.5))
-
-
-
+ggplot(data = eda_race_level, aes(x = as.factor(grid_to_position),fill=status)) + 
+  geom_bar() + xlab("Positions Lost or Gained") + ylab("Number of drivers") + 
+  ggtitle(" regard of Driver of the Day in 2016-2022") + 
+  theme(plot.title = element_text(hjust = 0.5))
 
 ```
 
@@ -386,10 +513,13 @@ Analysis to determine if there is a correlation between driver of the day, their
 ggplot(data=eda_race_level,aes(x = Driver.of.The.Day, y = position)) + 
   geom_boxplot()+ 
   ggtitle("Distribution of driver of day driver standings") +
-  theme(plot.title = element_text(hjust = 0.5))+scale_x_discrete(guide = guide_axis(n.dodge=1)) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_x_discrete(guide = guide_axis(n.dodge=1)) + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
 #Graph to understand the driver standings for a given race, how many places they lost and gained, 
-ggplot(data = eda_race_level, aes(x = grid_to_position,y=position,color=Driver.of.The.Day)) + geom_jitter() + xlab("Amount of positions lost or gained") + ylab("Driver standing") + ggtitle("Distribution of Race in regard of Driver of the Day in 2016-2022") + theme(plot.title = element_text(hjust = 0.5))
+ggplot(data = eda_race_level, aes(x = grid_to_position,y=position,color=Driver.of.The.Day)) + geom_jitter() + xlab("Amount of positions lost or gained") + ylab("Driver standing") + ggtitle("Distribution of Race in regard of Driver of the Day in 2016-2022") + 
+  theme(plot.title = element_text(hjust = 0.5))
 ```
 
 Analysis to determine team standings for the team who had a driver win drive of the day. 
@@ -399,7 +529,9 @@ Analysis to determine team standings for the team who had a driver win drive of 
 ggplot(data=eda_race_level,aes(x = Team, y = constructor_position)) + 
   geom_boxplot()+ 
   ggtitle("Distribution of driver of day constructor standings") +
-  theme(plot.title = element_text(hjust = 0.5))+scale_x_discrete(guide = guide_axis(n.dodge=1)) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_x_discrete(guide = guide_axis(n.dodge=1)) + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
 ```
 
@@ -408,86 +540,6 @@ write.csv(eda_race_level, "../data/eda_race_level.csv", row.names=FALSE)
 
 ```
 
-## Building results file
-
 ```{r}
-create_results_level_ds <- function(){
-  if (! exists("eda_driver_level")) {
-    eda_driver_level <- create_driver_level_ds()
-  }
-  
-   if(! exists("eda_results_level")) {
-     results_df <- list_of_df[["results"]]
-     results_df$raceTime <- results_df$time
-     #drop time, rank (duplicate to position Order), drop points, drop positionText
-    results_df <- results_df[, !(names(results_df) %in% c("time", "rank", "positionText", "position", "points", "number"))]
-      #create datset
-     #Join to race level dataset based on race/year
-    races_df <- list_of_df[["races"]]
-    races_df$Race_name <- races_df$name
-    #drop unneeded variables 
-    races_df <- races_df[, !(names(races_df) %in% c("round", "url", "name"))]
-        
-    eda_results_level <- results_df %>% inner_join(races_df, by = c("raceId"))
-    
-    #join results with driver data
-    eda_results_level <- eda_results_level %>% inner_join(list_of_df[["drivers"]], by = c("driverId"))
-    eda_results_level$dob_driver <- eda_results_level$dob
-    eda_results_level <- eda_results_level[, !(names(eda_results_level) %in% c("number", "code", "forename", "surname", "url", "dob"))]
-    
-    #Translate date to date
-    eda_results_level$date <- as.Date(eda_results_level$date, "%Y-%m-%d")
-    eda_results_level$dob_driver <- as.Date(eda_results_level$dob_driver, "%Y-%m-%d")
-    
-    #NEW VAR: Create age at race
-    eda_results_level$age_at_race <- as.numeric(floor((eda_results_level$date - eda_race_level$dob) / 365.25))
-    
-    
-    #Join with drivers_standings on driverId + raceId 
-    driver_standings <-list_of_df[["driver_standings"]]
-    eda_results_level <- eda_results_level %>% left_join(driver_standings, by = c("raceId", "driverId"))
-    #TODO: any cols to drop?
-
-    #Join pit_stops_driver race on driverId + raceID to bring in Number of Stops
-    eda_results_level <- eda_results_level %>% left_join(pit_stops_driver_race, by = c("raceId", "driverId"))
-    
-    #Join status and StatusId
-    eda_results_level <- eda_results_level %>% left_join(list_of_df[["status"]], by = c("statusId"))
-    
-    #Join with constructors on team name
-    constructors <- list_of_df[["constructors"]]
-    constructors <-  constructors[, !(names(constructors) %in% c("url", "nationality", "constructorRef"))]
-    #Temp fixes for some teams
-    constructors$name[constructors$name == "Alpine F1 Team"] = "Alpine"
-    constructors$name[constructors$name == "Haas F1 Team"] = "Haas"
-    constructors$name[constructors$name == "AlphaTauri"] = "Alpha Tauri"
-    eda_results_level <- eda_results_level %>% left_join(constructors, by = c("constructorId"))
-    
-    constructor_standings <-list_of_df[["constructor_standings"]]
-    colnames(constructor_standings)[colnames(constructor_standings) == 'points'] <- 'constructor_points'
-    colnames(constructor_standings)[colnames(constructor_standings) == 'position'] <- 'constructor_position'
-    colnames(constructor_standings)[colnames(constructor_standings) == 'positionText'] <- 'constructor_positionText'
-    colnames(constructor_standings)[colnames(constructor_standings) == 'wins'] <- 'constructor_wins'
-    eda_reulst_level <- eda_results_level %>% left_join(constructor_standings, by = c("raceId", "constructorId"))
-    
-    eda_results_level <- eda_results_level %>% inner_join(eda_driver_level, by = c("year" = "Season", "Race_name" = "Race"))
-    
-   }
-  else{
-    eda_results_level
-  }
-
-}
-
-
-
-eda_results_level <- create_results_level_ds()
-summary(eda_results_level)
-
-
-```
-
-```{r}
-write.csv(eda_race_level, "../data/eda_results_level.csv", row.names=FALSE)
-
+write.csv(eda_results_level, "../data/eda_results_level.csv", row.names=FALSE)
 ```
