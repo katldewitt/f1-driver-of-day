@@ -1,0 +1,346 @@
+---
+title: "F1 Models"
+output: html_document
+date: "2023-02-04"
+---
+```{r, include=FALSE}
+library(dplyr)
+library(tidyverse)
+```
+
+eda_race_level provides one row per race, the information for the driver of the day
+
+To predict the team for driver of the day, we want a data set that lists all drivers for a given race and the result if they were driver of the day.
+
+Create the analytical file:
+
+Read in data
+```{r read_in}
+# @FUNCTION: read_in
+# read in the data using a filepath, returns a dataframe
+# @param filename = filepath for pc
+read_in <- function(filename){
+  dataset = read.csv(filename)
+  dataset
+}
+
+
+# Read in the kaggle datasets
+dsnames <- c("circuits",
+             "constructor_results",
+             "constructor_standings",
+             "constructors",
+             "driver_standings",
+             "drivers",
+             "lap_times",
+             "pit_stops",
+             "qualifying",
+             "races",
+             "results",
+             "seasons",
+             "sprint_results",
+             "status" )
+
+list_of_df <- list()
+
+for (dsname in dsnames) {
+  print(paste("Reading in", dsname))
+  list_of_df[[dsname]] <-  read_in(paste0('../data/Kaggle_DS/', dsname, '.csv'))
+  print(summary(list_of_df[[dsname]]))
+}
+
+# Read in outcome variables for driver of the day, which is an exception in 
+#location and naming
+dsname <- "driver_of_day"
+print(paste("Reading in", dsname))
+list_of_df[[dsname]] <-  read_in(paste0('../data/DriverOfDay.csv'))
+summary(list_of_df[[dsname]])
+```
+
+Merge driver of the day data set with driver information to prep for merge
+```{r create_driver_level_ds}
+# FUNCTION create_driver_level_ds
+# Creates a driver level dataset by combining Driver of the Day with Driver Data 
+# if it's not already in memory
+# @returns a dataframe where the PK is driverRef (usually driver's last name, all lower)
+
+create_driver_level_ds <- function(){
+  if (! exists("eda_driver_level")) {
+      #1. create a modified version of Driver of the day with some driver reference updates
+      driverofday_m <- list_of_df[["driver_of_day"]]
+      driverofday_m$Driver.of.The.Day[driverofday_m$Driver.of.The.Day=="Verstappen"] <- c("max_verstappen")
+      driverofday_m$Driver.of.The.Day[driverofday_m$Driver.of.The.Day=="Kyvat"] <- c("kvyat") #spelling error that needs to be fixed
+      driverofday_m$Driver.of.The.Day[driverofday_m$Driver.of.The.Day=="Magnussen"] <- c("kevin_magnussen")
+      driverofday_m$Driver.of.The.Day[driverofday_m$Driver.of.The.Day=="Schumacher"] <- c("mick_schumacher")
+      
+      #2. Lower case everything for joins
+      driverofday_m$Driver.of.The.Day <- tolower(driverofday_m$Driver.of.The.Day)
+      
+      #3. Left join the kaggle dataset Drivers using driver ref
+      eda_driver_level <- driverofday_m %>% left_join(list_of_df[["drivers"]], by = c("Driver.of.The.Day" = "driverRef"))
+      
+      #4. clean up and format
+      remove(driverofday_m)
+      
+      #drop unneeded variables 
+      eda_driver_level <- eda_driver_level[, !(names(eda_driver_level) %in% c("number", "code", "forename", "surname", "url"))]
+      
+      #Reformat variables
+      eda_driver_level$Race <- as.factor(eda_driver_level$Race)
+      eda_driver_level$nationality <- as.factor(eda_driver_level$nationality)
+      eda_driver_level$Driver.of.The.Day <- as.factor(eda_driver_level$Driver.of.The.Day)
+      
+      #Tranlsate DOB to date format
+      eda_driver_level$dob <- as.Date(eda_driver_level$dob, "%Y-%m-%d")
+      
+      #5. return df
+      eda_driver_level
+  }
+  else {
+    eda_driver_level
+  }
+  
+}
+
+eda_driver_level <- create_driver_level_ds()
+
+```
+
+```{r}
+#Create a df of number of pitstops per race
+pit_stops <- list_of_df[["pit_stops"]]
+
+pit_stops_driver_race <- pit_stops %>% group_by(raceId, driverId) %>% summarise(num_stops = n())
+
+#QA: Verify case between datasets
+nrow(pit_stops[c(pit_stops$raceId == 841 & pit_stops$driverId == 153),]) ==
+  pit_stops_driver_race$num_stops[pit_stops_driver_race$raceId == 841 & pit_stops_driver_race$driverId == 153]
+
+```
+
+```{r}
+# FUNCTION create_race_level_ds
+# Creates a race level dataset by combining Driver of the Day with race level info 
+# if it's not already in memory
+# @returns a dataframe where the PKs are driverId and raceId
+
+create_race_level_ds <- function(){
+  if (! exists("eda_driver_level")) {
+    eda_driver_level <- create_driver_level_ds()
+  }
+  
+   if (! exists("eda_race_level")) {
+     #create datset
+     #Join to race level dataset based on race/year
+    eda_race_level <- eda_driver_level %>% left_join(list_of_df[["races"]], by = c("Race" = "name", "Season" = "year"))
+    
+    #drop unneeded variables 
+    eda_race_level <- eda_race_level[, !(names(eda_race_level) %in% c("round", "url"))]
+          
+    
+    #Translate date to date
+    eda_race_level$date <- as.Date(eda_race_level$date, "%Y-%m-%d")
+    eda_race_level$dob <- as.Date(eda_race_level$dob, "%Y-%m-%d")
+    
+    #NEW VAR: Create age at race
+    eda_race_level$age_at_race <- as.numeric(floor((eda_race_level$date - eda_race_level$dob) / 365.25))
+    
+    
+    #NEW VAR: afternoon race?
+    eda_race_level$afternoon_race <-  strptime(eda_race_level$time, "%H:%M:%S") >=  strptime("12:00:00", "%H:%M:%S")
+    #Q: do all these times make sense? some are at 5:10 or 6:00, which is way too early...
+    #A: The times are all in UTC
+    
+    #Join with drivers_standings on driverId + raceId 
+    driver_standings <-list_of_df[["driver_standings"]]
+    eda_race_level <- eda_race_level %>% left_join(driver_standings, by = c("raceId", "driverId"))
+    
+
+    #Join pit_stops_driver race on driverId + raceID to bring in Number of Stops
+    eda_race_level <- eda_race_level %>% left_join(pit_stops_driver_race, by = c("raceId", "driverId"))
+    
+    #Join results race on driverId + raceID to bring in Number of Stops
+    results <- list_of_df[["results"]]
+    results$raceTime <- results$time
+    #drop time, rank (duplicate to position Order), drop points, drop positionText
+    results <- results[, !(names(results) %in% c("time", "rank", "positionText", "position", "points"))]
+    eda_race_level <- eda_race_level %>% left_join(results, by = c("raceId", "driverId"))
+  
+    #Join status and StatusId
+    eda_race_level <- eda_race_level %>% left_join(list_of_df[["status"]], by = c("statusId"))
+    
+    #Join with constructors on team name
+    constructors <- list_of_df[["constructors"]]
+    constructors <-  constructors[, !(names(constructors) %in% c("url", "nationality", "constructorRef"))]
+    #Temp fixes for some teams
+    constructors$name[constructors$name == "Alpine F1 Team"] = "Alpine"
+    constructors$name[constructors$name == "Haas F1 Team"] = "Haas"
+    constructors$name[constructors$name == "AlphaTauri"] = "Alpha Tauri"
+    eda_race_level <- eda_race_level %>% left_join(constructors, by = c("Team" = "name"))
+    
+   }
+  else{
+    eda_race_level
+  }
+
+}
+
+
+
+eda_race_level <- create_race_level_ds()
+summary(eda_race_level)
+
+#Check the constructor merge
+names(eda_race_level)
+#Teams when we have a null constructor ID
+eda_race_level$Team[is.na(eda_race_level$constructorId.x)]
+#we expect this to be 1, constructorID from race result is same as constructor...?
+mean(eda_race_level$constructorId.x == eda_race_level$constructorId.y, na.rm = T)
+eda_race_level$Driver.of.The.Day[eda_race_level$constructorId.x != eda_race_level$constructorId.y]
+
+
+#Q: Why do we have NA's in this dataset?
+eda_race_level[is.na(eda_race_level$points),]
+#A: The NA's are due to when we pulled Kaggle vs the most recent driver of the day.
+```
+
+Create full dataset
+```{r}
+create_results_level_ds <- function(){
+  if (! exists("eda_driver_level")) {
+    eda_driver_level <- create_driver_level_ds()
+  }
+  
+   if(! exists("eda_results_level")) {
+     #1. Dataset that lists the results of all drivers for races
+      results_df <- list_of_df[["results"]]
+
+      #Rename variable for clarity
+      results_df$raceTime <- results_df$time
+
+    #drop time, rank (duplicate to position Order), drop points, drop positionText
+    results_df <- results_df[, !(names(results_df) %in% c("time", "positionText", "position", "points", "number","milliseconds"))]
+    
+    #NEW VAR: grid_to_position that calculates the difference between grid starting position and finishing position (places lost or gained in race). Note that if a driver did not finish, positionOrder listed 20. 
+    results_df <- results_df %>%
+      mutate(grid_to_position=(as.numeric(grid)-as.numeric(positionOrder)))
+    
+    
+    #2. Inner join to race dataset based on race/year
+    races_df <- list_of_df[["races"]]
+    
+    #Rename variable for clarity
+    races_df$Race_name <- races_df$name
+    
+    #drop unneeded variables 
+    races_df <- races_df[, (names(races_df) %in% c("raceId", "year", "circuitId","Race_name","date","time"))]
+            
+    eda_results_level <- results_df %>% inner_join(races_df, by = c("raceId"))
+        
+    #3. Left join results with driver data
+    eda_results_level <- eda_results_level %>% inner_join(list_of_df[["drivers"]], by = c("driverId"))
+    
+    #rename variables for clarity
+    eda_results_level$dob_driver <- eda_results_level$dob
+    eda_results_level$driver_nationality <- eda_results_level$nationality
+    
+    eda_results_level <- eda_results_level[, !(names(eda_results_level) %in% c("number", "code", "forename", "surname", "url", "dob","nationality"))]
+        
+    #Translate date to date
+    eda_results_level$date <- as.Date(eda_results_level$date, "%Y-%m-%d")
+    eda_results_level$dob_driver <- as.Date(eda_results_level$dob_driver, "%Y-%m-%d")
+      
+    #NEW VAR: Create age at race
+    eda_results_level$age_at_race <- as.numeric(floor((eda_results_level$date - eda_race_level$dob) / 365.25))
+        
+        
+    #4. Left join with drivers_standings on driverId + raceId 
+    driver_standings <-list_of_df[["driver_standings"]]
+    
+    #Rename variables for clarity
+    driver_standings$driver_points <- driver_standings$points
+    driver_standings$driver_position <- driver_standings$position
+    
+    
+    #Drop uneeded variables
+    driver_standings <- driver_standings[,!names(driver_standings) %in% c("points","position","positionText")]
+    
+    eda_results_level <- eda_results_level %>% left_join(driver_standings, by = c("raceId", "driverId"))
+       
+        
+    #5. Left join pit_stops_driver race on driverId + raceID to bring in Number of Stops
+    eda_results_level <- eda_results_level %>% left_join(pit_stops_driver_race, by = c("raceId", "driverId"))
+        
+    #6. Left join status and StatusId
+    eda_results_level <- eda_results_level %>% left_join(list_of_df[["status"]], by = c("statusId"))
+        
+    #7. Left join with constructors on team name
+    constructors <- list_of_df[["constructors"]]
+    
+    #Temp fixes for some teams
+    constructors$name[constructors$name == "Alpine F1 Team"] = "Alpine"
+    constructors$name[constructors$name == "Haas F1 Team"] = "Haas"
+    constructors$name[constructors$name == "AlphaTauri"] = "Alpha Tauri"
+    
+    #Rename variables for clarity
+    constructors$constructor_name <- constructors$name
+    
+    #Drop unneeded variables
+    constructors <-  constructors[, !(names(constructors) %in% c("url", "nationality", "name"))]
+    
+    eda_results_level <- eda_results_level %>% left_join(constructors, by = c("constructorId"))
+      
+    #8. Left join with constructor standings
+    constructor_standings <-list_of_df[["constructor_standings"]]
+    
+    #Rename variables for clarity
+    constructor_standings$constructor_points <- constructor_standings$points
+    constructor_standings$constructor_position <- constructor_standings$position
+    constructor_standings$constructor_wins <- constructor_standings$wins
+    
+    #Drop unneeded variables
+    constructor_standings <-  constructor_standings[, !(names(constructor_standings) %in% c("points", "position", "positionText","wins"))]
+    
+    eda_results_level <- eda_results_level %>% left_join(constructor_standings, by = c("raceId", "constructorId"))
+        
+        
+    #9. Inner Join Driver of the Day
+    
+    #Rename variables for clarity
+    eda_driver_level$driverId_driverofday <- eda_driver_level$driverId
+    eda_driver_level$Team_driverofday <- eda_driver_level$Team
+    
+    #Drop unneeded variables
+    eda_driver_level <-  eda_driver_level[, !(names(eda_driver_level) %in% c("dob", "nationality", "driverId"))]
+    
+    #Inner join so only results for 2016-2022 are used
+    eda_results_level <- eda_results_level %>% inner_join(eda_driver_level, by = c("year" = "Season", "Race_name" = "Race"))
+    
+    #Hot encode driver of the day variable    
+    eda_results_level <- eda_results_level %>% mutate(driver.of.day.ind = if_else(
+      driverId == driverId_driverofday, 1, 0))
+    
+    #Change variable types
+    eda_results_level <- eda_results_level %>% mutate_at(c('fastestLap', 'rank','fastestLapSpeed'), as.numeric)
+   }
+  else{
+    eda_results_level
+  }
+
+}
+
+
+
+eda_results_level <- create_results_level_ds()
+summary(eda_results_level)
+
+
+```
+
+
+```{r}
+write.csv(eda_results_level, "../data/eda_results_level.csv", row.names=FALSE)
+```
+
+
+
