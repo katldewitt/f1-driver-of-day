@@ -1,0 +1,119 @@
+---
+title: "F1 Analysis and Modeling"
+output: html_document
+date: "2023-04-15"
+---
+
+```{r}
+library(dplyr)
+library(tidyverse)
+library(rpart)
+library(partykit)
+library(randomForest)
+```
+
+Based on EDA, removed some of the variables for the prediction modeling
+Can I do fatest lap?
+```{r}
+glimpse(eda_results_level)
+eda_results_level$driver.of.day.ind <- as.factor(eda_results_level$driver.of.day.ind)
+```
+
+```{r}
+results_model <- eda_results_level %>% select(c(1:6,9,11,12,14:16,23:28,32:35,40))
+glimpse(eda_results_level)
+glimpse(results_model)
+```
+
+Split into test and train data sets
+Use just numerical data so that classification isnt' affected?
+```{r}
+#Divided data into training (80%) and test (20%)
+set.seed(1874)
+n <- nrow(results_model)
+test_idx <- sample.int(n,size=round(0.2*n))
+results_train <- results_model[-test_idx, ]
+nrow(results_train)
+results_test <- results_model[test_idx, ]
+nrow(results_test)
+```
+```{r}
+#Glimpse of training data
+glimpse(results_train)
+```
+```{r}
+#Glimpse of test data
+glimpse(results_test)
+```
+
+Just to take a look, use random forest for classification of driver of the day. Random Forest allows us to see which variables are most important. 
+1. Do not take into account 1 winner per race
+2. Do not take into account which variables are part of the overall datasets 
+
+
+
+```{r}
+form <- as.formula(driver.of.day.ind~.)
+```
+
+Determine optimal mtry value for misclassication rate
+```{r}
+#Loop for misclassification rate
+test <- results_test
+misc <- integer(10)
+for(i in 1:10){
+  set.seed(1842)
+  results_forest <- randomForest(form,data=results_train,mtry=i,ntree=500, na.action=na.roughfix)
+  test$results_forest_pred <- predict(results_forest,test,type = "class")
+  confusion1 <- table(test$results_forest_pred,test$driver.of.day.ind)
+  mr <- 1-(sum(diag(confusion1))/nrow(test))
+  misc[i] <- mr
+}
+misc
+```
+```{r}
+#Plot
+m <- cbind(1:10,misc)
+colnames(m) <- c("M_Value", "Misclassification_Rate")
+m <- data.frame(m)
+ggplot(data=m, aes(x=M_Value)) + 
+  geom_line(data=m,aes(x=M_Value,y = Misclassification_Rate, color="steelblue"), linetype="twodash") +  
+  ylab("Rate")+ scale_x_continuous(breaks=c(1,2,3,4,5,6,7,8,9,10))+
+  ggtitle("Misclassification rate per M")+
+  theme(plot.title = element_text(hjust = 0.5),legend.position = c(0.8, 0.1)) + 
+  scale_color_discrete(name = "Legend", labels = c("Misclassification Rate"))
+```
+The classification algorithm using random forest with mtry=3 is below.
+```{r, eval=FALSE}
+set.seed(1842)
+forest1 <- randomForest(form, data=results_train, mtry=3,ntree=500,na.action=na.roughfix)
+forest1
+```
+
+We have calculated a confusion matrix with the misclassification rate and false negative rate. 
+```{r, eval=FALSE}
+test_pred1 <- results_test
+##predicted values
+test_pred1$pred1 <- predict(forest1, newdata=results_test,type="class")
+##created table
+confusion1 <- table(test_pred1$pred1,test_pred1$driver.of.day.ind,dnn=c("predicted","actual"))
+confusion1
+##Misclassification rate
+1-(sum(diag(confusion1))/nrow(test_pred1))
+28/536
+```
+
+```{r}
+filter_pred <- test_pred1 %>% filter(driver.of.day.ind!=pred1)
+filter_pred <- filter_pred %>% left_join(list_of_df[["drivers"]])
+```
+
+
+To determine which variables are used most often in the random forest, we have plotted the importance plot from the importance table.
+```{r, eval=FALSE}
+df<- data.frame(importance(forest1))
+df %>% arrange(-MeanDecreaseGini)
+varImpPlot(forest1, sort=TRUE)
+```
+
+
