@@ -12,6 +12,7 @@ The data for Driver of the Day were sourced from Fomula 1's official website, fo
 
 | Year | Link |
 |------|------|
+| 2023 | https://www.formula1.com/en/latest/article.driver-of-the-day-2023.5wGE2ke3SFqQwabYVQXLnF.html |
 | 2022 | https://www.formula1.com/en/latest/article.driver-of-the-day-2022.6pXweJZLe1l3puCiid9aj3.html |
 | 2021 | https://www.formula1.com/en/latest/article.driver-of-the-day-2021.78AqC4wM6NVtaNH1mZA4on.html |
 | 2020 | https://www.formula1.com/en/latest/article.driver-of-the-day-2020.30G6kHOGAe7Wcz2KBwwObh.html |
